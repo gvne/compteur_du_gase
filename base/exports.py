@@ -1,6 +1,8 @@
+import csv
 from tempfile import NamedTemporaryFile
 
 from django.db.models import Sum, F
+from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
@@ -140,3 +142,47 @@ def generate_export_inventory(filename):
         ws.row_dimensions[i+1].height=20
 
     wb.save(filename)
+
+
+PURCHASES_CSV_HEADER = ("Date", "Achat", "Foyer (id)", "Foyer", "Produit", "Catégorie", "Fournisseur",
+                        "Quantité", "Unité", "Montant", "Coût d'achat", "Stock après l'opération", "Type")
+
+DELETED_LABEL = "(supprimé)"
+
+
+def get_purchases(categories=None, households=None, start=None, end=None):
+    """Lignes d'achat filtrées. start et end sont des dates incluses."""
+    ops = (PurchaseDetailOp.objects
+           .select_related('purchase__household', 'product__category', 'product__provider', 'product__unit')
+           .order_by('date', 'pk'))
+    if categories:
+        ops = ops.filter(product__category__in=categories)
+    if households:
+        ops = ops.filter(purchase__household__in=households)
+    if start:
+        ops = ops.filter(date__date__gte=start)
+    if end:
+        ops = ops.filter(date__date__lte=end)
+    return ops
+
+
+def generate_export_purchases_rows(ops):
+    yield PURCHASES_CSV_HEADER
+    for op in ops.iterator():
+        h = op.purchase.household
+        p = op.product
+        # les quantités et montants des achats sont stockés en négatif
+        yield (timezone.localtime(op.date).strftime('%Y-%m-%d %H:%M:%S'),
+               op.purchase_id,
+               h.pk if h else '',
+               h.name if h else DELETED_LABEL,
+               p.name if p else DELETED_LABEL,
+               str(p.category) if p and p.category else '',
+               str(p.provider) if p else '',
+               -op.quantity,
+               str(p.unit) if p else '',
+               -op.price,
+               -op.purchase_cost,
+               op.stock,
+               op.label)
+

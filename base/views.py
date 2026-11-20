@@ -1,3 +1,4 @@
+import csv
 import json
 from dataclasses import dataclass, field
 from datetime import date
@@ -5,7 +6,7 @@ from decimal import Decimal
 from typing import List, Iterable, Tuple
 
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponseRedirect, HttpResponse, HttpRequest
+from django.http import HttpResponseRedirect, HttpResponse, HttpRequest, HttpResponseBadRequest
 from django.urls import reverse, reverse_lazy
 from django.contrib import messages
 from django.views.generic.edit import CreateView, UpdateView
@@ -1170,6 +1171,26 @@ def export_inventory(request):
         response = HttpResponse(tmp.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = 'attachment; filename=bilan_inventaires.xlsx'
         return response
+
+@staff_member_required
+def export_purchases(request):
+    """Export CSV des achats. Filtres optionnels (paramètres GET) :
+    categorie=<id> et foyer=<id> (répétables), debut=AAAA-MM-JJ et fin=AAAA-MM-JJ (inclus).
+    Exemple : /export/achats?categorie=3&foyer=12&debut=2026-01-01&fin=2026-03-31"""
+    try:
+        filters = {
+            'categories': [int(x) for x in request.GET.getlist('categorie')],
+            'households': [int(x) for x in request.GET.getlist('foyer')],
+            'start': date.fromisoformat(request.GET['debut']) if request.GET.get('debut') else None,
+            'end': date.fromisoformat(request.GET['fin']) if request.GET.get('fin') else None,
+        }
+    except ValueError:
+        return HttpResponseBadRequest("Paramètres invalides : categorie et foyer attendent un identifiant, "
+                                      "debut et fin une date au format AAAA-MM-JJ.")
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename=export_achats.csv'
+    csv.writer(response).writerows(generate_export_purchases_rows(get_purchases(**filters)))
+    return response
 
 def ecarts(request):
     return render(request, 'base/ecarts.html', {'ecarts': generate_ecarts_data()})
