@@ -141,12 +141,21 @@
                 [[ _.capitalize(column) ]]
                 [[ sortKey == column ? (sortWay === 'asc' ? "⯅" : "⯆") : ""]]
             </th>
+            <th></th>
         </tr>
         </thead>
         <tbody>
         <tr v-for="x in filter()">
             <td v-for="column in columns">
                 [[ x[column] ]]
+            </td>
+            <td>
+                <form v-if="x.cancel_url" :action="x.cancel_url" method="post"
+                      onsubmit="return confirm('Annuler cet approvisionnement ? Le stock et le prix d\'achat seront corrigés.')">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Annuler</button>
+                </form>
+                <span v-else class="text-muted">[[ x.status ]]</span>
             </td>
         </tr>
         </tbody>
