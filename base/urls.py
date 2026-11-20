@@ -38,6 +38,7 @@ urlpatterns = [
     path('ecarts', views.ecarts, name='ecarts'),
     path('export/inventaires', views.export_inventory, name='export_inventory'),
     path('export/achats', views.export_purchases, name='export_purchases'),
+    path('export/stocks', views.export_stocks, name='export_stocks'),
     path('stats/<int:product_id>', views.stats, name='stats'),
     path('database', views.database_info, name='database_info'),
     path('notes', views.notes, name='notes'),

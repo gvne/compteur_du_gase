@@ -1192,6 +1192,14 @@ def export_purchases(request):
     csv.writer(response).writerows(generate_export_purchases_rows(get_purchases(**filters)))
     return response
 
+@staff_member_required
+def export_stocks(request):
+    """Export CSV de l'état actuel des stocks de tous les produits, archivés compris."""
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename=export_stocks.csv'
+    csv.writer(response).writerows(generate_export_stocks_rows())
+    return response
+
 def ecarts(request):
     return render(request, 'base/ecarts.html', {'ecarts': generate_ecarts_data()})
 
