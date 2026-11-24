@@ -324,6 +324,20 @@ class Product(models.Model):
     def value_purchase(self):
         return self.cost_of_purchase * self.stock
 
+    def add_to_stock(self, quantity, unit_cost):
+        """
+        Ajoute (ou retire si négatif) une quantité au stock, valorisée à unit_cost.
+        Le prix d'achat devient le prix moyen pondéré du stock restant. Sans stock restant,
+        ou si la moyenne serait négative, on garde le prix d'achat actuel.
+        """
+        stock_before = max(self.stock, 0)
+        stock_after = stock_before + quantity
+        if stock_after > 0:
+            average = (stock_before * self.cost_of_purchase + quantity * unit_cost) / stock_after
+            if average >= 0:
+                self.cost_of_purchase = average.quantize(Decimal('0.01'))
+        self.stock += quantity
+
     def get_email_stock_alert(self) -> list[Member]:
         # Ref produits + ref fournisseurs
         provider_referents = self.provider.referents.all()
@@ -381,6 +395,9 @@ class ChangeStockOp(Operation):
                                         default=0)  # product.cost_of_purchase * quantity
     stock = models.DecimalField(max_digits=15, decimal_places=3)  # stock after the operation
     label = models.CharField(max_length=20)
+    cancels = models.OneToOneField('self', null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name='cancelled_by',
+                                   verbose_name="annule l'opération")  # renseigné pour une annulation d'appro
 
     objects = ChangeStockOpQuerySet.as_manager()
 
@@ -415,6 +432,13 @@ class ChangeStockOp(Operation):
         if get_local_settings().use_cost_of_purchase:
             return self.purchase_cost
         return self.price # purchase cost is at zero when cost of purchase (margin) setting is disabled
+
+    def is_cancelled(self):
+        return hasattr(self, 'cancelled_by')
+
+    def can_be_cancelled(self):
+        return (self.label == self.TYPE_APPRO_STOCK and self.quantity > 0
+                and self.product is not None and not self.is_cancelled())
 
     def __str__(self):
         return '{} : {} - {}'.format(self.label, self.product, self.quantity)

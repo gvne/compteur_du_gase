@@ -31,6 +31,7 @@ urlpatterns = [
     path('appro', views.pre_appro, name='pre_appro'),
     path('appro/<int:provider_id>', views.ApproView.as_view(), name='appro'),
     path('approslist', views.approslist, name='approslist'),
+    path('approslist/<int:op_id>/annuler', views.cancel_appro, name='cancel_appro'),
     path('compte', views.pre_compte, name='pre_compte'),
     path('compte/<int:household_id>', views.compte, name='compte'),
     path('compteslist', views.compteslist, name='compteslist'),

@@ -487,6 +487,7 @@ class ApproView(FormSetView):
         for form in formset:
             if form.has_changed():
                 product = form.cleaned_data["product"]
+                previous_cost = product.cost_of_purchase
 
                 # Object edit, done before the appro so that it uses the new prices:
                 for field_name in form.changed_data:
@@ -496,7 +497,7 @@ class ApproView(FormSetView):
                 # Appro itself:
                 quantity = form.cleaned_data.get("quantity")
                 if "quantity" in form.changed_data and quantity != 0:
-                    self._do_appro(product, quantity)
+                    self._do_appro(product, quantity, previous_cost)
                     appro_summary[product] = quantity
 
                 product.save()
@@ -552,9 +553,13 @@ class ApproView(FormSetView):
                  )
 
     @staticmethod
-    def _do_appro(product: Product, quantity: float):
+    def _do_appro(product: Product, quantity: Decimal, previous_cost: Decimal):
+        # L'opération est valorisée au prix saisi pour cet appro (ou au prix actuel)...
+        unit_cost = product.cost_of_purchase
         ChangeStockOp.create_appro_stock(product=product, quantity=quantity)
-        product.stock += quantity
+        # ... et le prix d'achat du produit devient le prix moyen pondéré du stock
+        product.cost_of_purchase = previous_cost
+        product.add_to_stock(quantity, unit_cost)
 
 
 
@@ -566,8 +571,10 @@ def approslist(request):
     appros = [{"jour": p.date.day, "mois": p.date.month, "année": p.date.year, "fournisseur": str(p.product.provider if p.product else "Produit supprimé"),
                "produit": str(p.product), "coût total (prix d'achat)": '{0:.2f} €'.format(p.cost_of_purchase()),
                "coût total (prix de vente)": '{0:.2f} €'.format(p.cost_of_price()),
-               "date": p.date.isoformat()}
-              for p in ChangeStockOp.objects.appros_only()]
+               "date": p.date.isoformat(),
+               "cancel_url": reverse('base:cancel_appro', args=[p.pk]) if p.can_be_cancelled() else None,
+               "status": "annulé" if p.is_cancelled() else ("annulation" if p.cancels_id else "")}
+              for p in ChangeStockOp.objects.appros_only().select_related('product__provider', 'cancelled_by')]
     context = {
         'columns': json.dumps(columns),
         'appros': json.dumps(appros),
@@ -576,6 +583,30 @@ def approslist(request):
     }
     context.update(**_date_filter_context())
     return render(request, 'base/approslist.html', context)
+
+
+def cancel_appro(request, op_id):
+    """Annule un appro : crée l'opération inverse, au prix de l'appro annulé."""
+    if request.method != "POST":
+        return redirect('base:approslist')
+    with transaction.atomic():
+        op = get_object_or_404(ChangeStockOp.objects.appros_only().select_related('product'), pk=op_id)
+        if not op.can_be_cancelled():
+            messages.error(request, "✘ Cet approvisionnement ne peut pas être annulé "
+                                    "(déjà annulé, produit supprimé ou ce n'est pas un approvisionnement).")
+            return redirect('base:approslist')
+        product = op.product
+        ChangeStockOp.objects.create(product=product,
+                                     quantity=-op.quantity,
+                                     price=-op.price,
+                                     purchase_cost=-op.purchase_cost,
+                                     stock=product.stock - op.quantity,
+                                     label=ChangeStockOp.TYPE_APPRO_STOCK,
+                                     cancels=op)
+        product.add_to_stock(-op.quantity, op.purchase_cost / op.quantity)
+        product.save()
+    messages.success(request, f"✔ Approvisionnement de {round_stock(op.quantity)} {product.unit} de {product} annulé")
+    return redirect('base:approslist')
 
 
 def get_appros_stats(use_cost_of_purchase):
