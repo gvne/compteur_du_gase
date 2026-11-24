@@ -1,4 +1,5 @@
 import csv
+from decimal import Decimal
 from tempfile import NamedTemporaryFile
 
 from django.db.models import Sum, F
@@ -186,3 +187,27 @@ def generate_export_purchases_rows(ops):
                op.stock,
                op.label)
 
+
+
+STOCKS_CSV_HEADER = ("Produit (id)", "Produit", "Catégorie", "Fournisseur", "Unité", "Stock",
+                     "Prix de vente", "Valeur au prix de vente", "Prix d'achat", "Valeur au prix d'achat",
+                     "Seuil d'alerte", "Visible", "Activé")
+
+
+def generate_export_stocks_rows():
+    yield STOCKS_CSV_HEADER
+    products = Product.all_objects.select_related('category', 'provider', 'unit').order_by(Lower('name'), 'pk')
+    for p in products.iterator():
+        yield (p.pk,
+               p.name,
+               str(p.category) if p.category else '',
+               str(p.provider),
+               str(p.unit),
+               p.stock,
+               p.price,
+               p.value_stock().quantize(Decimal('0.01')),
+               p.cost_of_purchase,
+               p.value_purchase().quantize(Decimal('0.01')),
+               p.stock_alert if p.stock_alert is not None else '',
+               bool_to_utf8(p.visible),
+               bool_to_utf8(p.activated))
